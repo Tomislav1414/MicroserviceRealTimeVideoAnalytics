@@ -74,3 +74,4 @@ services:
 networks:
   default:
     name: vms-local
+    external: true
