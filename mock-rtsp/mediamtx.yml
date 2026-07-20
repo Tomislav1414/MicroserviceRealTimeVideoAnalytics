@@ -1,0 +1,44 @@
+###############################################################################
+# MediaMTX — local dev config
+###############################################################################
+
+# Log level: debug | info | warn | error
+logLevel: info
+
+# RTSP server
+rtsp: true
+rtspAddress: :8554
+
+# HLS server
+hls: true
+hlsAddress: :8888
+hlsAlwaysRemux: true
+
+# WebRTC server — sub-second latency, use this for browser frontends
+webrtc: true
+webrtcAddress: :8889
+# Tell MediaMTX to advertise the host IP in ICE candidates so the browser
+# can reach it. Without this, it advertises the Docker internal IP (172.x.x.x).
+webrtcAdditionalHosts:
+  - 127.0.0.1
+
+# HTTP API (health, metrics, list paths)
+api: true
+apiAddress: :9997
+
+authInternalUsers:
+  - user: any
+    pass:
+    permissions:
+      - action: publish
+      - action: read
+      - action: api
+
+# Path config — accept anything under cam/*
+paths:
+  "~^cam/.*":
+    source: publisher
+    # Keeps the stream alive even if publisher drops briefly
+    sourceOnDemand: false
+    # Buffer for late subscribers
+    recordSegmentDuration: 0s
