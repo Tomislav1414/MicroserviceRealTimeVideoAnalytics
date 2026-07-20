@@ -1,0 +1,4 @@
+videos/
+
+# compiled Go binary
+mock-cam-controller/mock-cam-controller

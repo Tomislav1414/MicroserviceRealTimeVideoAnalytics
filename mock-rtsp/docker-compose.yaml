@@ -1,0 +1,76 @@
+services:
+
+  # ─── MediaMTX ────────────────────────────────────────────────────────────────
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    ports:
+      - "8554:8554"   # RTSP
+      - "8000:8000/udp" # RTP (RTSP over UDP)
+      - "8001:8001/udp" # RTCP (RTSP over UDP)
+      - "8888:8888"   # HLS
+      - "8889:8889"   # WebRTC (WHEP)
+      - "8189:8189/udp" # WebRTC ICE/UDP media
+      - "9997:9997"   # HTTP API / metrics
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml
+    restart: unless-stopped
+
+  # ─── Mock Camera hum_det ──────────────────────────────────────────────────────
+  mock-cam-hum_det:
+    build: ./mock-cam
+    image: mock-cam:latest
+    container_name: mock-cam-hum_det
+    environment:
+      CAM_ID: cam/hum_det
+      VIDEO_PATH: /videos/hum_det.mp4
+      RTSP_HOST: mediamtx
+      RTSP_PORT: 8554
+    volumes:
+      - ./videos:/videos
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+
+  # ─── Mock Camera car_passing ──────────────────────────────────────────────────
+  mock-cam-car_passing:
+    build: ./mock-cam
+    image: mock-cam:latest
+    container_name: mock-cam-car_passing
+    environment:
+      CAM_ID: cam/car_passing
+      VIDEO_PATH: /videos/carPassing.mp4
+      RTSP_HOST: mediamtx
+      RTSP_PORT: 8554
+    volumes:
+      - ./videos:/videos
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+
+  # ─── Mock Cam Controller API ──────────────────────────────────────────────────
+  mock-cam-controller:
+    build: ./mock-cam-controller
+    container_name: mock-cam-controller
+    ports:
+      - "3000:3000"
+    environment:
+      MEDIAMTX_HOST: mediamtx
+      MEDIAMTX_PUBLIC_HOST: localhost
+      MEDIAMTX_PORT: 8554
+      VIDEOS_PATH: /videos
+      VIDEOS_FROM: mock-cam-controller
+      # In local mode, controller manages docker containers (not k8s pods)
+      MODE: docker
+      DOCKER_NETWORK: vms-local
+      CAM_IMAGE: mock-cam:latest
+    volumes:
+      - ./videos:/videos
+      - /var/run/docker.sock:/var/run/docker.sock  # needed to spawn containers
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+
+networks:
+  default:
+    name: vms-local
