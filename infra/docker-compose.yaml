@@ -42,9 +42,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      # Convenient for ad-hoc experiments; switch off once topic partition
-      # counts (e.g. per-camera partitioning) need to be created explicitly.
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Off: the grabber creates its topic explicitly with partitions >=
+      # camera count. Auto-create would race it and default to 1 partition,
+      # silently breaking per-camera partition affinity.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     volumes:
       - kafka_data:/var/lib/kafka/data
     healthcheck:
@@ -77,7 +78,7 @@ services:
     ports:
       - "${PGADMIN_PORT:-8082}:80"
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@vms.local}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@vms.example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
       PGADMIN_CONFIG_SERVER_MODE: "False"
     volumes:
