@@ -1,0 +1,71 @@
+services:
+
+  # ─── Kafka topic init ───────────────────────────────────────────────────────
+  # One-shot: creates `<type>-detections` per DETECTOR_TYPES, plus the shared
+  # `sessions` topic, before any detector/RisingWave consumer or producer
+  # touches them. Required because infra's KAFKA_AUTO_CREATE_TOPICS_ENABLE is
+  # off (see infra/docker-compose.yaml) — without this, a consumer joining
+  # its group before the topic exists can be assigned zero partitions
+  # permanently, and RisingWave's Kafka sinks fail outright on a missing
+  # topic instead of creating it.
+  kafka-init:
+    image: apache/kafka:3.9.0
+    environment:
+      KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP:-kafka:9092}
+      DETECTOR_TYPES: ${DETECTOR_TYPES:-human,car}
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "IFS=',';
+       for d in $$DETECTOR_TYPES; do
+         /opt/kafka/bin/kafka-topics.sh --bootstrap-server $$KAFKA_BOOTSTRAP --create --if-not-exists --topic $$d-detections --partitions 1 --replication-factor 1 || exit 1;
+       done;
+       /opt/kafka/bin/kafka-topics.sh --bootstrap-server $$KAFKA_BOOTSTRAP --create --if-not-exists --topic sessions --partitions 1 --replication-factor 1"
+    restart: on-failure
+
+  # ─── RisingWave ─────────────────────────────────────────────────────────────
+  # Streaming SQL sessionizer (see ARCHITECTURE.md). Single-node in-memory
+  # (`playground`, the default command) — state resets on restart, fine since
+  # every source uses scan.startup.mode='latest'.
+  #   4566: Postgres wire protocol (psql / sinks)   5691: dashboard UI
+  risingwave:
+    image: risingwavelabs/risingwave:latest
+    # Embedded Python UDFs (bbox_overlaps_zone in shared.sql) are disabled by
+    # default since RisingWave v2.1.5/2.2.4/2.3.0 — enable via risingwave.toml.
+    command: ["single_node", "--in-memory", "--config-path", "/risingwave.toml"]
+    volumes:
+      - ./risingwave.toml:/risingwave.toml:ro
+    ports:
+      - "${RISINGWAVE_PG_PORT:-4566}:4566"
+      - "${RISINGWAVE_UI_PORT:-5691}:5691"
+    restart: unless-stopped
+
+  # ─── RisingWave pipeline registration ───────────────────────────────────────
+  # One-shot: applies shared.sql, then templates+applies schema.sql/pipeline.sql
+  # per DETECTOR_TYPES entry against infra's actual Postgres (vms/vms/vms —
+  # not a separate "detections" db/user) and Kafka. Idempotent; re-run with
+  # `docker compose up -d --build risingwave-init` after editing any .sql file.
+  risingwave-init:
+    build: .
+    environment:
+      RISINGWAVE_DSN: postgresql://root@risingwave:4566/dev
+      POSTGRES_DSN: "postgresql://${POSTGRES_USER:-vms}:${POSTGRES_PASSWORD:-vms}@postgres:5432/${POSTGRES_DB:-vms}"
+      POSTGRESQL_HOST: postgres
+      POSTGRESQL_PORT: "5432"
+      POSTGRESQL_USER: ${POSTGRES_USER:-vms}
+      POSTGRESQL_PASS: ${POSTGRES_PASSWORD:-vms}
+      POSTGRESQL_DB: ${POSTGRES_DB:-vms}
+      KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP:-kafka:9092}
+      SESSION_GAP_SECONDS: ${SESSION_GAP_SECONDS:-10}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.6}
+      STATE_RETENTION: ${STATE_RETENTION:-2 hours}
+      MIN_INCIDENT_DETECTIONS: ${MIN_INCIDENT_DETECTIONS:-3}
+      DETECTOR_TYPES: ${DETECTOR_TYPES:-human,car}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: on-failure
+
+networks:
+  default:
+    name: vms-local
+    external: true
