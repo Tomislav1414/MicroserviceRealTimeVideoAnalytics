@@ -1,0 +1,23 @@
+services:
+
+  # ─── frontend ───────────────────────────────────────────────────────────────
+  # Static SPA (React + Vite), served by nginx. Talks directly to mediamtx
+  # (WebRTC/WHEP for live video), session-sse (SSE for notifications), and
+  # sessionapi (REST for history) from the browser — this container does no
+  # server-side proxying of any of them.
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_MEDIAMTX_WHEP_BASE: ${VITE_MEDIAMTX_WHEP_BASE:-http://localhost:8889}
+        VITE_SESSION_SSE_BASE: ${VITE_SESSION_SSE_BASE:-http://localhost:8095}
+        VITE_SESSION_API_BASE: ${VITE_SESSION_API_BASE:-http://localhost:8090}
+    container_name: frontend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    restart: unless-stopped
+
+networks:
+  default:
+    name: vms-local
+    external: true
