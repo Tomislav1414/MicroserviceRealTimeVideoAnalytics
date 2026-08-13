@@ -1,0 +1,4 @@
+ultralytics>=8.3
+torch>=2.2
+opencv-python-headless>=4.9
+python-dotenv>=1.0
