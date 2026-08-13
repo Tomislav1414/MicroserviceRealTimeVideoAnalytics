@@ -1,0 +1,23 @@
+services:
+
+  # ─── session-sse ────────────────────────────────────────────────────────────
+  # Reads the shared `sessions` topic (written by risingwave's per-detector
+  # pipelines) and fans it out to browser clients over Server-Sent Events.
+  # Singleton by design: it holds the history cache and client list in
+  # process memory, so it does not scale via replicas (see main.go).
+  session-sse:
+    build: .
+    container_name: session-sse
+    ports:
+      - "${SESSION_SSE_PORT:-8095}:8095"
+    environment:
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      SESSIONS_TOPIC: ${SESSIONS_TOPIC:-sessions}
+      HTTP_ADDR: ${HTTP_ADDR:-:8095}
+      MAX_CACHE_SESSIONS: ${MAX_CACHE_SESSIONS:-5000}
+    restart: unless-stopped
+
+networks:
+  default:
+    name: vms-local
+    external: true
