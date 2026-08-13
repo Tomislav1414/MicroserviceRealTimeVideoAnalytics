@@ -1,0 +1,26 @@
+services:
+
+  # ─── sessionapi ─────────────────────────────────────────────────────────────
+  # Thin REST API over Postgres for session history — the frontend can't
+  # query Postgres directly, and "live" state is already covered by
+  # session-sse, so this only ever serves the *_detection_sessions_log
+  # tables (ended sessions), never live/in-progress ones.
+  sessionapi:
+    build: .
+    container_name: sessionapi
+    ports:
+      - "${SESSIONAPI_PORT:-8090}:8090"
+    environment:
+      POSTGRESQL_HOST: postgres
+      POSTGRESQL_PORT: "5432"
+      POSTGRESQL_USER: ${POSTGRES_USER:-vms}
+      POSTGRESQL_PASS: ${POSTGRES_PASSWORD:-vms}
+      POSTGRESQL_DB: ${POSTGRES_DB:-vms}
+      DETECTOR_TYPES: ${DETECTOR_TYPES:-human,car}
+      HTTP_ADDR: ":8090"
+    restart: unless-stopped
+
+networks:
+  default:
+    name: vms-local
+    external: true
