@@ -94,6 +94,7 @@ main {
 }
 
 .camera-tile {
+  position: relative;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -105,6 +106,18 @@ main {
   aspect-ratio: 16 / 9;
   background: #000;
   display: block;
+}
+
+.camera-tile-occupancy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .camera-tile-label {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { connectWhep, type WhepSession } from "../lib/whep";
 import type { CameraConfig } from "../config/cameras";
+import { useOccupancy } from "../context/OccupancyContext";
 
 const WHEP_BASE = import.meta.env.VITE_MEDIAMTX_WHEP_BASE ?? "http://localhost:8889";
 const RECONNECT_DELAY_MS = 3000;
@@ -10,6 +11,8 @@ type Status = "connecting" | "live" | "error";
 export default function CameraTile({ camera }: { camera: CameraConfig }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState<Status>("connecting");
+  const occupancy = useOccupancy();
+  const count = occupancy[camera.id];
 
   useEffect(() => {
     let cancelled = false;
@@ -75,6 +78,9 @@ export default function CameraTile({ camera }: { camera: CameraConfig }) {
   return (
     <div className="camera-tile">
       <video ref={videoRef} autoPlay playsInline muted />
+      {count !== undefined && (
+        <div className="camera-tile-occupancy">👥 {count}</div>
+      )}
       <div className="camera-tile-label">
         <span>{camera.name}</span>
         <span className={`status-dot status-${status}`} title={status} />

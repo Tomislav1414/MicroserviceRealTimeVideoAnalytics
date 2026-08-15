@@ -16,8 +16,8 @@ DEVICE = os.getenv("DEVICE") or None
 SAMPLE_EVERY_N_FRAMES = int(os.getenv("SAMPLE_EVERY_N_FRAMES", "1"))
 KAFKA_GROUP_ID = os.getenv("KAFKA_GROUP_ID", "car-detector")
 
-# COCO classes: 2 = car, 3 = motorcycle, 5 = bus
-VEHICLE_CLASSES = {2: "car", 3: "motorcycle", 5: "bus"}
+# COCO classes: 1 = bicycle, 2 = car, 3 = motorcycle, 5 = bus
+VEHICLE_CLASSES = {1: "bicycle", 2: "car", 3: "motorcycle", 5: "bus"}
 
 
 def main() -> None:

@@ -8,7 +8,7 @@ services:
     build: .
     container_name: grabber
     environment:
-      CAMERAS: ${CAMERAS:-cam/hum_det,cam/car_passing}
+      CAMERAS: ${CAMERAS:-cam/cam1,cam/cam2,cam/cam3,cam/cam4}
       MEDIAMTX_HOST: ${MEDIAMTX_HOST:-mediamtx}
       MEDIAMTX_PORT: ${MEDIAMTX_PORT:-8554}
       KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}

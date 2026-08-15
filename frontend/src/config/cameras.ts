@@ -4,11 +4,13 @@
 // mock-rtsp/docker-compose.yaml (gives it a mediamtx path), add it to the
 // grabber's CAMERAS env var, then add an entry here.
 export interface CameraConfig {
-  id: string; // mediamtx path, e.g. "cam/hum_det" — also the camera_id used throughout the pipeline
+  id: string; // mediamtx path, e.g. "cam/cam1" — also the camera_id used throughout the pipeline
   name: string; // display name
 }
 
 export const CAMERAS: CameraConfig[] = [
-  { id: "cam/hum_det", name: "Human detection cam" },
-  { id: "cam/car_passing", name: "Car passing cam" },
+  { id: "cam/cam1", name: "Cam 1 — Human detection" },
+  { id: "cam/cam2", name: "Cam 2 — Car passing" },
+  { id: "cam/cam3", name: "Cam 3 — Worker zone" },
+  { id: "cam/cam4", name: "Cam 4 — Store aisle" },
 ];

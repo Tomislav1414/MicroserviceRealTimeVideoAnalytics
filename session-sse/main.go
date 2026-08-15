@@ -17,6 +17,122 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
+// occupancyEvent is the live "how many right now" count for one camera,
+// read directly off the detector's raw per-frame topic (detection_count),
+// not derived from the sessionizer — it's a snapshot of the latest frame,
+// not a confirmed/deduplicated incident.
+type occupancyEvent struct {
+	CameraID string    `json:"camera_id"`
+	Count    int       `json:"count"`
+	Ts       time.Time `json:"ts"`
+}
+
+// occupancyHub fans out live per-camera occupancy to SSE clients. Unlike
+// hub (sessions), there's no history log to replay: only the latest count
+// per camera matters, so a new client just gets the current snapshot.
+type occupancyHub struct {
+	mu      sync.RWMutex
+	clients map[*occupancyClient]struct{}
+	latest  map[string]occupancyEvent // camera_id -> latest count
+}
+
+type occupancyClient struct {
+	ch chan []byte
+}
+
+func newOccupancyHub() *occupancyHub {
+	return &occupancyHub{
+		clients: make(map[*occupancyClient]struct{}),
+		latest:  make(map[string]occupancyEvent),
+	}
+}
+
+func (h *occupancyHub) ingest(e occupancyEvent) {
+	frame := occupancyFrame(e)
+	h.mu.Lock()
+	h.latest[e.CameraID] = e
+	clients := make([]*occupancyClient, 0, len(h.clients))
+	for c := range h.clients {
+		clients = append(clients, c)
+	}
+	h.mu.Unlock()
+
+	for _, c := range clients {
+		select {
+		case c.ch <- frame:
+		default: // slow client; drop frame
+		}
+	}
+}
+
+func (h *occupancyHub) snapshot() []occupancyEvent {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := make([]occupancyEvent, 0, len(h.latest))
+	for _, e := range h.latest {
+		out = append(out, e)
+	}
+	return out
+}
+
+func (h *occupancyHub) add(c *occupancyClient) {
+	h.mu.Lock()
+	h.clients[c] = struct{}{}
+	h.mu.Unlock()
+}
+
+func (h *occupancyHub) remove(c *occupancyClient) {
+	h.mu.Lock()
+	delete(h.clients, c)
+	h.mu.Unlock()
+}
+
+func occupancyFrame(e occupancyEvent) []byte {
+	b, _ := json.Marshal(e)
+	return fmt.Appendf(nil, "event: occupancy\ndata: %s\n\n", b)
+}
+
+func (h *occupancyHub) serveSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	c := &occupancyClient{ch: make(chan []byte, 64)}
+
+	for _, e := range h.snapshot() {
+		_, _ = w.Write(occupancyFrame(e))
+	}
+	flusher.Flush()
+
+	h.add(c)
+	defer h.remove(c)
+
+	fmt.Fprint(w, ": connected\n\n")
+	flusher.Flush()
+
+	ticker := time.NewTicker(25 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			fmt.Fprint(w, ": ping\n\n")
+			flusher.Flush()
+		case frame := <-c.ch:
+			_, _ = w.Write(frame)
+			flusher.Flush()
+		}
+	}
+}
+
 type sessionEvent struct {
 	Kind      string     `json:"kind"`
 	SessionID string     `json:"session_id"`
@@ -151,9 +267,11 @@ func main() {
 		os.Exit(1)
 	}
 	h := newHub(maxCache)
+	occHub := newOccupancyHub()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/events", h.serveSSE)
+	mux.HandleFunc("/occupancy", occHub.serveSSE)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -173,6 +291,8 @@ func main() {
 		defer scancel()
 		_ = srv.Shutdown(sctx)
 	}()
+
+	go consumeOccupancy(ctx, occHub, log)
 
 	topic := env("SESSIONS_TOPIC", "sessions")
 	r := kafka.NewReader(kafka.ReaderConfig{
@@ -291,4 +411,68 @@ func env(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// rawDetection mirrors detectorsdk's per-frame producer payload (cam_id, ts,
+// detection_count, detections) -- the same raw shape RisingWave's
+// __DETECTOR___detections source reads, but consumed here directly instead
+// of through the sessionizer, since occupancy needs the instantaneous
+// per-frame count, not a confirmed/deduplicated session.
+type rawDetection struct {
+	CamID          string    `json:"cam_id"`
+	Ts             time.Time `json:"ts"`
+	DetectionCount int       `json:"detection_count"`
+}
+
+// consumeOccupancy reads the human detector's raw per-frame topic directly
+// and feeds occHub with the latest count per camera. StartOffset LastOffset
+// (not FirstOffset like the sessions reader): occupancy is "current state",
+// so replaying old detection backlog on every restart would only show stale
+// counts, never anything worth keeping.
+//
+// OCCUPANCY_CAMERA_ID scopes this to a single camera (default cam/cam4):
+// occupancy is a per-camera opt-in feature here, not a blanket "every camera
+// gets a live count" one -- other cameras still get session STARTED/ENDED
+// notifications as before via the separate sessions-topic reader, just no
+// live occupancy number.
+func consumeOccupancy(ctx context.Context, occHub *occupancyHub, log *slog.Logger) {
+	topic := env("HUMAN_DETECTIONS_TOPIC", "human-detections")
+	cameraID := env("OCCUPANCY_CAMERA_ID", "cam/cam4")
+	r := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:     strings.Split(env("KAFKA_BROKERS", "kafka:9092"), ","),
+		Topic:       topic,
+		Partition:   0, // detector topics are created with a single partition (see risingwave/docker-compose.yaml kafka-init)
+		MinBytes:    1,
+		MaxBytes:    10e6,
+		StartOffset: kafka.LastOffset,
+	})
+	defer r.Close()
+
+	log.Info("session-sse consuming occupancy", "topic", topic, "camera_id", cameraID)
+
+	const readErrBackoff = 2 * time.Second
+	for {
+		m, err := r.ReadMessage(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			log.Error("occupancy read", "err", err)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(readErrBackoff):
+			}
+			continue
+		}
+		var d rawDetection
+		if err := json.Unmarshal(m.Value, &d); err != nil {
+			log.Warn("skip malformed occupancy message", "err", err)
+			continue
+		}
+		if d.CamID != cameraID {
+			continue
+		}
+		occHub.ingest(occupancyEvent{CameraID: d.CamID, Count: d.DetectionCount, Ts: d.Ts})
+	}
 }

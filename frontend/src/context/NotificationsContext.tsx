@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { isDangerZoneEvent, type SessionEvent } from "../lib/sessionEvents";
+import { isDangerZoneEvent, isOpenEvent, type SessionEvent } from "../lib/sessionEvents";
 
 const SSE_BASE = import.meta.env.VITE_SESSION_SSE_BASE ?? "http://localhost:8095";
 const MAX_EVENTS = 200;
@@ -50,6 +50,12 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         ...prev,
         [event.camera_id]: (prev[event.camera_id] ?? 0) + 1,
       }));
+
+      // Only "opening" events (STARTED / DANGER_ZONE_ENTRY) get a toast --
+      // ENDED/DANGER_ZONE_EXIT still land in `events`/the unread badge, just
+      // without popping up, per explicit request to surface only the start
+      // of an incident, not its close.
+      if (!isOpenEvent(event)) return;
 
       const toastId = `${event.kind}:${event.session_id}`;
       setToasts((prev) => (prev.some((t) => t.id === toastId) ? prev : [...prev, { id: toastId, event }]));

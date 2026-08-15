@@ -32,7 +32,7 @@ CREATE SOURCE __DETECTOR___detections (
     ts              TIMESTAMPTZ,
     detection_count INT,
     detections      JSONB,
-    WATERMARK FOR ts AS ts - INTERVAL '2' SECOND
+    WATERMARK FOR ts AS ts - INTERVAL '1' SECOND
 ) WITH (
     connector = 'kafka',
     topic = '__DETECTOR__-detections',
@@ -113,7 +113,19 @@ FROM __DETECTOR___session_progress
 GROUP BY cam_id, session_seq;
 
 -- ---------------------------------------------------------------------------
--- Event-time clock
+-- Event-time clock.
+--
+-- A single global MAX(ts) across every camera of this detector type means
+-- one camera's confirmation/ended gate can occasionally be held up by a
+-- completely unrelated camera's stream stalling (observed in practice as
+-- multi-second STARTED delivery outliers). A per-camera clock (GROUP BY
+-- cam_id) joined against session_live would fix that coupling, but a plain
+-- JOIN between two streaming views loses RisingWave's dynamic-filter
+-- once-only emission optimization entirely -- confirmed empirically:
+-- switching to a per-camera JOIN made sessions resend STARTED dozens of
+-- times, once per incoming detection, instead of exactly once. Kept as a
+-- single global scalar deliberately; the occasional cross-camera stall is
+-- the accepted tradeoff for correct once-only emission.
 -- ---------------------------------------------------------------------------
 CREATE MATERIALIZED VIEW __DETECTOR___clock AS
 SELECT MAX(ts) AS max_ts FROM __DETECTOR___detections;
@@ -328,10 +340,26 @@ WITH (
 -- STARTED fires exactly once per session, once it's been confirmed as a real
 -- incident (its __MIN_INCIDENT_DETECTIONS__-th detection), not at the first,
 -- possibly noisy, detection. confirmed_at is frozen inside session_live's
--- GROUP BY, so filtering it here (rather than via a dedicated MV) is stable:
--- gating on the source watermark lag ensures we only read a row once
--- RisingWave's revision window for confirmed_at has closed, so no
--- wrong/duplicate session_id ever gets sunk.
+-- GROUP BY, but session_live's row keeps re-emitting on every later
+-- detection in the same session (last_seen/running_count still change) --
+-- a STATIC filter like `confirmed_at IS NOT NULL` passes every one of those
+-- re-emissions too, sinking a duplicate STARTED per still-open session
+-- (confirmed by testing: an ongoing session fired STARTED repeatedly with
+-- only `IS NOT NULL`). The dynamic `< max_ts - INTERVAL` comparison against
+-- the clock MV is what makes this fire exactly once: RisingWave tracks it as
+-- a threshold/temporal filter and only forwards the false->true transition,
+-- not later re-passes. 1 second is the practical floor here -- RisingWave's
+-- interval literal in this position rejected both a MILLISECOND unit and a
+-- fractional-second value ("0.3"), only whole SECOND values parsed.
+--
+-- Deliberately an ungrouped scalar subquery, NOT a JOIN against clock: a
+-- plain JOIN between two streaming views loses RisingWave's dynamic-filter
+-- once-only optimization entirely and re-emits on every update to either
+-- side (confirmed empirically: switching this to a JOIN made a session
+-- resend STARTED dozens of times, once per incoming detection). The
+-- tradeoff is clock is a single cross-camera value, so this camera's gate
+-- can occasionally be held up by a completely different camera's stream
+-- stalling -- accepted as a known limitation rather than "fixed" with a join.
 CREATE SINK __DETECTOR___session_live_topic_sink AS
 SELECT
     'STARTED' AS kind,
@@ -341,7 +369,7 @@ SELECT
     replace(CAST(start_time AT TIME ZONE 'UTC' AS TEXT), ' ', 'T') || 'Z' AS start_time
 FROM __DETECTOR___session_live
 WHERE confirmed_at IS NOT NULL
-  AND confirmed_at < (SELECT max_ts - INTERVAL '2 seconds' FROM __DETECTOR___clock)
+  AND confirmed_at < (SELECT max_ts - INTERVAL '1 second' FROM __DETECTOR___clock)
 WITH (
     connector = 'kafka',
     topic = 'sessions',

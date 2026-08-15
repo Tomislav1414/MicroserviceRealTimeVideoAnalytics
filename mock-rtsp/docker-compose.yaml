@@ -16,13 +16,13 @@ services:
       - ./mediamtx.yml:/mediamtx.yml
     restart: unless-stopped
 
-  # ─── Mock Camera hum_det ──────────────────────────────────────────────────────
-  mock-cam-hum_det:
+  # ─── Mock Camera cam1 (human detection room) ──────────────────────────────────
+  mock-cam-cam1:
     build: ./mock-cam
     image: mock-cam:latest
-    container_name: mock-cam-hum_det
+    container_name: mock-cam-cam1
     environment:
-      CAM_ID: cam/hum_det
+      CAM_ID: cam/cam1
       VIDEO_PATH: /videos/hum_det.mp4
       RTSP_HOST: mediamtx
       RTSP_PORT: 8554
@@ -32,14 +32,54 @@ services:
       - mediamtx
     restart: unless-stopped
 
-  # ─── Mock Camera car_passing ──────────────────────────────────────────────────
-  mock-cam-car_passing:
+  # ─── Mock Camera cam2 (car passing) ────────────────────────────────────────────
+  mock-cam-cam2:
     build: ./mock-cam
     image: mock-cam:latest
-    container_name: mock-cam-car_passing
+    container_name: mock-cam-cam2
     environment:
-      CAM_ID: cam/car_passing
+      CAM_ID: cam/cam2
       VIDEO_PATH: /videos/carPassing.mp4
+      RTSP_HOST: mediamtx
+      RTSP_PORT: 8554
+    volumes:
+      - ./videos:/videos
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+
+  # ─── Mock Camera cam3 (worker zone) ─────────────────────────────────────────────
+  mock-cam-cam3:
+    build: ./mock-cam
+    image: mock-cam:latest
+    container_name: mock-cam-cam3
+    environment:
+      CAM_ID: cam/cam3
+      VIDEO_PATH: /videos/worker_zone.mp4
+      # Source clip is native 1920x1080 @ ~60fps, well above the pipeline's
+      # 12fps design — capped to match cam1/cam2 and keep decode/detection
+      # real-time (see entrypoint.sh).
+      OUTPUT_FPS: "12"
+      RTSP_HOST: mediamtx
+      RTSP_PORT: 8554
+    volumes:
+      - ./videos:/videos
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+
+  # ─── Mock Camera cam4 (store aisle) ─────────────────────────────────────────────
+  mock-cam-cam4:
+    build: ./mock-cam
+    image: mock-cam:latest
+    container_name: mock-cam-cam4
+    environment:
+      CAM_ID: cam/cam4
+      VIDEO_PATH: /videos/store_aisle.mp4
+      # Source clip is native ~60fps, well above the pipeline's 12fps design
+      # — capped to match cam1/cam2 and keep decode/detection real-time
+      # (see entrypoint.sh).
+      OUTPUT_FPS: "12"
       RTSP_HOST: mediamtx
       RTSP_PORT: 8554
     volumes:
