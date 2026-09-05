@@ -16,9 +16,6 @@ type Config struct {
 	KafkaPartitions int
 }
 
-// LoadConfig reads the grabber's static camera list and connection settings
-// from the environment. The camera list is fixed at startup (no dynamic
-// discovery) per the current design.
 func LoadConfig() (Config, error) {
 	camerasEnv := os.Getenv("CAMERAS")
 	if camerasEnv == "" {
@@ -36,8 +33,7 @@ func LoadConfig() (Config, error) {
 		}
 		partitions = n
 	}
-	// Partitions must be >= camera count, otherwise two cameras can land on
-	// the same partition and per-camera GOP ordering is no longer guaranteed.
+
 	if partitions < len(cameras) {
 		return Config{}, fmt.Errorf("KAFKA_PARTITIONS (%d) must be >= number of cameras (%d)", partitions, len(cameras))
 	}

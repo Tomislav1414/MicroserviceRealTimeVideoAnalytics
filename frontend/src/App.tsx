@@ -3,6 +3,7 @@ import { NotificationsProvider } from "./context/NotificationsContext";
 import { OccupancyProvider } from "./context/OccupancyContext";
 import Layout from "./components/Layout";
 import LivePage from "./pages/LivePage";
+import Layout2Page from "./pages/Layout2Page";
 import HistoryPage from "./pages/HistoryPage";
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<LivePage />} />
+              <Route path="layout2" element={<Layout2Page />} />
               <Route path="history" element={<HistoryPage />} />
             </Route>
           </Routes>

@@ -4,6 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
+
 RUN sed -i 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' /etc/apt/sources.list; \
     opts="-o Acquire::Retries=3"; \
     ok=1; \
@@ -20,15 +21,6 @@ RUN sed -i 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' /etc/apt/sourc
     [ "$ok" -eq 0 ] || exit 1; \
     update-ca-certificates && rm -rf /var/lib/apt/lists/*
 
-# detectorsdk is a local sibling package (build context is ./backend), not on PyPI.
-# python3-pip on Ubuntu 22.04 drags in apt's python3-setuptools (59.6.0, pre-PEP-621)
-# onto /usr/lib/python3/dist-packages. Even with build-system.requires = ["setuptools
-# >=68"] in pyproject.toml, pip's isolated build env for the *this* package still ends
-# up shadowed by that apt copy and silently produces a package named "UNKNOWN" instead
-# of "detectorsdk" (reproduced: apt setuptools present -> UNKNOWN; removed -> correct
-# name). Upgrading setuptools/wheel into system site-packages first and installing
-# with --no-build-isolation sidesteps the isolated env entirely. Retry: PyPI fetches
-# here have hit transient TLS hiccups on this network.
 COPY detectorsdk /detectorsdk
 RUN ok=1; \
     for i in 1 2 3 4 5; do \
@@ -38,10 +30,20 @@ RUN ok=1; \
     done; \
     [ "$ok" -eq 0 ] || exit 1
 
-COPY cardetector/requirements.txt .
+COPY firedetector/requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt && \
     pip3 install --no-cache-dir --force-reinstall opencv-python-headless
 
-COPY cardetector/ .
+# best.pt is a custom fine-tuned 2-class (fire, smoke) YOLOv8n checkpoint from
+# github.com/luminous0219/fire-and-smoke-detection-yolov8
+
+RUN ok=1; \
+    for i in 1 2 3 4 5; do \
+      if python3 -c "import urllib.request; urllib.request.urlretrieve('https://raw.githubusercontent.com/luminous0219/fire-and-smoke-detection-yolov8/main/weights/best.pt', 'best.pt')"; then ok=0; break; fi; \
+      echo "weight download failed (attempt $i), retrying in 5s..."; sleep 5; \
+    done; \
+    [ "$ok" -eq 0 ] || exit 1
+
+COPY firedetector/ .
 
 CMD ["python3", "main.py"]

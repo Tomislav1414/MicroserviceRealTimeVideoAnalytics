@@ -21,9 +21,7 @@ func frameLineSize(frame *C.AVFrame) *C.int {
 	return (*C.int)(unsafe.Pointer(&frame.linesize[0]))
 }
 
-// h264Decoder wraps FFmpeg's H264 decoder. One instance is created per Kafka
-// partition (= one camera's decode state) and torn down whenever that
-// partition is revoked, so a fresh decoder always starts from a clean slate.
+// h264Decoder wraps FFmpeg's H264 decoder
 type h264Decoder struct {
 	codecCtx    *C.AVCodecContext
 	yuv420Frame *C.AVFrame
@@ -98,15 +96,6 @@ func (d *h264Decoder) reinitDynamicStuff() error {
 	return nil
 }
 
-// decode feeds one Annex-B encoded access unit (as published by the
-// grabber) into the decoder and returns the resulting RGBA image, or nil if
-// the decoder didn't produce a frame from this packet (e.g. still warming
-// up on B/P frames with no reference yet).
-//
-// This assumes 1 input packet -> at most 1 output frame, which holds as
-// long as the source encoder never uses B-frames (true for the mock
-// cameras, bframes=0) — with B-frames, libavcodec can buffer multiple
-// packets before emitting a frame, breaking this 1:1 assumption.
 func (d *h264Decoder) decode(annexb []byte) (*image.RGBA, error) {
 	if len(annexb) == 0 {
 		return nil, nil

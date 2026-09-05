@@ -1,10 +1,6 @@
 services:
 
   # ─── session-sse ────────────────────────────────────────────────────────────
-  # Reads the shared `sessions` topic (written by risingwave's per-detector
-  # pipelines) and fans it out to browser clients over Server-Sent Events.
-  # Singleton by design: it holds the history cache and client list in
-  # process memory, so it does not scale via replicas (see main.go).
   session-sse:
     build: .
     container_name: session-sse

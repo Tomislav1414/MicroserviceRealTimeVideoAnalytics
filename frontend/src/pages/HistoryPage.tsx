@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchSessions, type Session } from "../lib/sessionapi";
-import { CAMERAS } from "../config/cameras";
+import { ALL_CAMERAS } from "../config/cameras";
 import { DETECTORS } from "../config/detectors";
 
 const PAGE_SIZE = 50;
@@ -54,7 +54,7 @@ export default function HistoryPage() {
           Camera
           <select value={cameraId} onChange={(e) => setCameraId(e.target.value)}>
             <option value="">All cameras</option>
-            {CAMERAS.map((c) => (
+            {ALL_CAMERAS.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>

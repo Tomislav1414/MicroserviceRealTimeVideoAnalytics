@@ -5,7 +5,7 @@
 # down last. Detectors need risingwave's kafka-init to have created their
 # `<type>-detections` topics first (KAFKA_AUTO_CREATE_TOPICS_ENABLE=false in
 # infra), so risingwave precedes them here.
-services := "infra mock-rtsp grabber decoder risingwave cardetector humandetector session-sse sessionapi frontend"
+services := "infra mock-rtsp grabber decoder risingwave cardetector humandetector firedetector session-sse sessionapi frontend"
 
 # Start every service, in dependency order.
 up:
@@ -16,13 +16,16 @@ up:
         (cd "$svc" && docker compose up -d --build --wait)
     done
 
-# Stop every service, in reverse dependency order.
+# Stop every service, in reverse dependency order, and wipe named volumes
+# (Postgres/Kafka/pgadmin data) so every restart starts from a clean slate --
+# this is a dev/demo stack, not something with data worth persisting across
+# restarts, and RisingWave itself already resets on restart (--in-memory).
 down:
     #!/usr/bin/env bash
     set -euo pipefail
     for svc in $(echo "{{services}}" | tr ' ' '\n' | tac); do
         echo "==> stopping $svc"
-        (cd "$svc" && docker compose down)
+        (cd "$svc" && docker compose down -v)
     done
 
 # Stop then start everything.

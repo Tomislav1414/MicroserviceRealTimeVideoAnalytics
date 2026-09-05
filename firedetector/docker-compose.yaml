@@ -1,18 +1,18 @@
 services:
 
-  # ─── Human detector ─────────────────────────────────────────────────────────
-  humandetector:
+  # ─── Fire/smoke detector ────────────────────────────────────────────────────
+  firedetector:
     build:
       context: ..
-      dockerfile: humandetector/Dockerfile
+      dockerfile: firedetector/Dockerfile
     environment:
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       DECODED_FRAMES_TOPIC: ${DECODED_FRAMES_TOPIC:-decoded-frames}
-      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-human-detector}
+      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-fire-detector}
       CONFIDENCE_FLOOR: ${CONFIDENCE_FLOOR:-0.4}
       SAMPLE_EVERY_N_FRAMES: ${SAMPLE_EVERY_N_FRAMES:-1}
       DEVICE: ${DEVICE:-}
-      CAMERAS: ${CAMERAS:-cam/cam1,cam/cam4}
+      CAMERAS: ${CAMERAS:-cam/cam7,cam/cam8}
     deploy:
       resources:
         reservations:

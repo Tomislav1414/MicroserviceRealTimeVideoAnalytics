@@ -1,3 +1,4 @@
 .env
 videos/
 *.mp4
+.claude

@@ -3,7 +3,6 @@ services:
   # ─── Car detector ───────────────────────────────────────────────────────────
   # Stateless: consumes decoded-frames (any camera, any partition Kafka
   # assigns it), runs YOLO vehicle detection, publishes to car-detections.
-  # Scale via replicas, same as decoder — no per-camera config needed here.
   cardetector:
     build:
       context: ..
@@ -15,6 +14,7 @@ services:
       CONFIDENCE_FLOOR: ${CONFIDENCE_FLOOR:-0.3}
       SAMPLE_EVERY_N_FRAMES: ${SAMPLE_EVERY_N_FRAMES:-1}
       DEVICE: ${DEVICE:-}
+      CAMERAS: ${CAMERAS:-cam/cam2}
     deploy:
       resources:
         reservations:

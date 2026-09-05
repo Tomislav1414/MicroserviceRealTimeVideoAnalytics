@@ -19,14 +19,8 @@ func NewProducer(brokers []string, topic string) *Producer {
 		writer: &kafka.Writer{
 			Addr:  kafka.TCP(brokers...),
 			Topic: topic,
-			// Each input partition (= one camera) maps to the identically
-			// numbered output partition, so decoded frames keep the same
-			// per-camera ordering guarantee the raw frames had — no hashing,
-			// no collision risk, and no need to know the camera roster here.
 			Balancer:     passthroughBalancer{},
 			RequiredAcks: kafka.RequireOne,
-			// See grabber/producer.go: default 1s BatchTimeout would stall
-			// the per-message synchronous write path badly.
 			BatchTimeout: 10 * time.Millisecond,
 		},
 	}
@@ -38,9 +32,6 @@ func (passthroughBalancer) Balance(msg kafka.Message, _ ...int) int {
 	return msg.Partition
 }
 
-// EnsureTopic creates the topic with the given partition count if it
-// doesn't exist yet. See grabber/producer.go for why explicit creation
-// matters (auto-create defaults to 1 partition).
 func EnsureTopic(ctx context.Context, brokers []string, topic string, partitions int) error {
 	client := &kafka.Client{Addr: kafka.TCP(brokers...)}
 
@@ -61,9 +52,7 @@ func EnsureTopic(ctx context.Context, brokers []string, topic string, partitions
 	return nil
 }
 
-// ReadPartitionCount returns how many partitions an existing topic has, so
-// the output topic can be created with the same count and keep a 1:1
-// partition mapping with the input topic.
+
 func ReadPartitionCount(brokers []string, topic string) (int, error) {
 	conn, err := kafka.Dial("tcp", brokers[0])
 	if err != nil {
@@ -78,8 +67,7 @@ func ReadPartitionCount(brokers []string, topic string) (int, error) {
 	return len(partitions), nil
 }
 
-// FrameMeta is the metadata carried alongside a decoded frame, propagated
-// from (or derived from) the corresponding raw-frames message.
+
 type FrameMeta struct {
 	FrameID      string
 	CapturedAt   string

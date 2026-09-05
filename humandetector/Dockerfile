@@ -5,16 +5,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 WORKDIR /app
 
-# A transparent HTTP proxy on this network path serves corrupted .deb files from
-# ports.ubuntu.com (arm64), causing "Hash Sum mismatch" on every attempt - retries
-# over plain HTTP just hit the same corrupting proxy again. Switching the mirror to
-# HTTPS routes around it (a MITM proxy can't silently rewrite TLS payloads without
-# failing certificate validation). Retries stay as a defense-in-depth for genuine
-# transient network blips.
-# The `break`-on-success/`sleep`-on-failure pattern here must end each iteration on a
-# command whose exit status reflects the real outcome - if the loop merely fell off the
-# end after 5 failures, RUN would see the last `sleep`'s exit 0 and report success on a
-# layer that never actually installed anything. `ok`/`exit 1` make exhaustion fatal.
 RUN sed -i 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' /etc/apt/sources.list; \
     opts="-o Acquire::Retries=3"; \
     ok=1; \
@@ -31,15 +21,6 @@ RUN sed -i 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' /etc/apt/sourc
     [ "$ok" -eq 0 ] || exit 1; \
     update-ca-certificates && rm -rf /var/lib/apt/lists/*
 
-# detectorsdk is a local sibling package (build context is ./backend), not on PyPI.
-# python3-pip on Ubuntu 22.04 drags in apt's python3-setuptools (59.6.0, pre-PEP-621)
-# onto /usr/lib/python3/dist-packages. Even with build-system.requires = ["setuptools
-# >=68"] in pyproject.toml, pip's isolated build env for the *this* package still ends
-# up shadowed by that apt copy and silently produces a package named "UNKNOWN" instead
-# of "detectorsdk" (reproduced: apt setuptools present -> UNKNOWN; removed -> correct
-# name). Upgrading setuptools/wheel into system site-packages first and installing
-# with --no-build-isolation sidesteps the isolated env entirely. Retry: PyPI fetches
-# here have hit transient TLS hiccups on this network.
 COPY detectorsdk /detectorsdk
 RUN ok=1; \
     for i in 1 2 3 4 5; do \

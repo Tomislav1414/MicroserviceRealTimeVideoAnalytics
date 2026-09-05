@@ -9,8 +9,9 @@ export default function Layout() {
         <h1>VMS Operator Console</h1>
         <nav>
           <NavLink to="/" end>
-            Live
+            Layout 1
           </NavLink>
+          <NavLink to="/layout2">Layout 2</NavLink>
           <NavLink to="/history">History</NavLink>
         </nav>
         <NotificationBell />

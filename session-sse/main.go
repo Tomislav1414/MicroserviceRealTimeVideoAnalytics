@@ -17,19 +17,12 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// occupancyEvent is the live "how many right now" count for one camera,
-// read directly off the detector's raw per-frame topic (detection_count),
-// not derived from the sessionizer — it's a snapshot of the latest frame,
-// not a confirmed/deduplicated incident.
 type occupancyEvent struct {
 	CameraID string    `json:"camera_id"`
 	Count    int       `json:"count"`
 	Ts       time.Time `json:"ts"`
 }
 
-// occupancyHub fans out live per-camera occupancy to SSE clients. Unlike
-// hub (sessions), there's no history log to replay: only the latest count
-// per camera matters, so a new client just gets the current snapshot.
 type occupancyHub struct {
 	mu      sync.RWMutex
 	clients map[*occupancyClient]struct{}
@@ -145,15 +138,10 @@ type sessionEvent struct {
 	ZoneName  *string    `json:"zone_name,omitempty"`
 }
 
-// closed reports whether this event represents a terminal state for its
-// session (safe to evict from the history cache under memory pressure), as
-// opposed to an open/live one that must be kept until its matching end event.
 func (e sessionEvent) closed() bool {
 	return e.Kind == "ENDED" || e.Kind == "DANGER_ZONE_EXIT"
 }
 
-// hub fans session events to SSE clients and maintains a bounded session
-// cache for history replay on new connections.
 type hub struct {
 	mu       sync.RWMutex
 	clients  map[*client]struct{}
@@ -174,9 +162,6 @@ func newHub(maxCache int) *hub {
 	}
 }
 
-// ingest records the event in the cache (a later event for the same
-// session_id, e.g. ENDED, overwrites an earlier one, e.g. STARTED) and
-// broadcasts it to connected clients.
 func (h *hub) ingest(e sessionEvent, log *slog.Logger) {
 	frame := sseFrame(e)
 	h.mu.Lock()
@@ -201,11 +186,6 @@ func (h *hub) ingest(e sessionEvent, log *slog.Logger) {
 	}
 }
 
-// evictOldestClosedLocked drops the oldest closed (ENDED/DANGER_ZONE_EXIT)
-// session to bound cache memory. Open sessions are never evicted so a
-// client can't miss an in-progress session's eventual end. Caller must hold
-// h.mu. If every cached entry is still open, the cache is left to grow past
-// maxCache rather than dropping live state.
 func (h *hub) evictOldestClosedLocked(log *slog.Logger) {
 	var oldestID string
 	var oldestStart time.Time
@@ -224,8 +204,6 @@ func (h *hub) evictOldestClosedLocked(log *slog.Logger) {
 	log.Debug("evicted session from cache", "session_id", oldestID, "cache_size", len(h.cache))
 }
 
-// snapshot returns all cached events matching the camera filter, sorted by
-// start_time ascending so the client builds state in order.
 func (h *hub) snapshot(camera string) []sessionEvent {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -298,16 +276,7 @@ func main() {
 	r := kafka.NewReader(kafka.ReaderConfig{
 		Brokers: strings.Split(env("KAFKA_BROKERS", "kafka:9092"), ","),
 		Topic:   topic,
-		// No GroupID: this service is a singleton in-memory fan-out hub, not
-		// a horizontally-scaled consumer — running two replicas wouldn't
-		// share a client list anyway. A plain partition reader with
-		// StartOffset FirstOffset guarantees the full topic replays into
-		// the cache on every start. A consumer group would NOT do this
-		// reliably: kafka-go auto-commits offsets by default, so
-		// StartOffset only applies once (before the group has any
-		// committed offset) and every later restart would resume
-		// mid-stream instead of rebuilding history.
-		Partition:   0, // the sessions topic is created with a single partition (see risingwave/docker-compose.yaml kafka-init)
+		Partition:   0, 
 		MinBytes:    1,
 		MaxBytes:    10e6,
 		StartOffset: kafka.FirstOffset,
@@ -342,8 +311,6 @@ func main() {
 	}
 }
 
-// sseFrame encodes one event as an SSE frame. The event name lets clients
-// subscribe with addEventListener instead of branching on the "kind" field.
 func sseFrame(e sessionEvent) []byte {
 	b, _ := json.Marshal(e)
 	var event string
@@ -376,8 +343,6 @@ func (h *hub) serveSSE(w http.ResponseWriter, r *http.Request) {
 	camera := r.URL.Query().Get("camera_id")
 	c := &client{camera: camera, ch: make(chan []byte, 64)}
 
-	// Send history before registering for live events so no event is missed
-	// in the gap between the snapshot and the subscription.
 	for _, e := range h.snapshot(camera) {
 		_, _ = w.Write(sseFrame(e))
 	}
@@ -413,35 +378,21 @@ func env(k, def string) string {
 	return def
 }
 
-// rawDetection mirrors detectorsdk's per-frame producer payload (cam_id, ts,
-// detection_count, detections) -- the same raw shape RisingWave's
-// __DETECTOR___detections source reads, but consumed here directly instead
-// of through the sessionizer, since occupancy needs the instantaneous
-// per-frame count, not a confirmed/deduplicated session.
+
 type rawDetection struct {
 	CamID          string    `json:"cam_id"`
 	Ts             time.Time `json:"ts"`
 	DetectionCount int       `json:"detection_count"`
 }
 
-// consumeOccupancy reads the human detector's raw per-frame topic directly
-// and feeds occHub with the latest count per camera. StartOffset LastOffset
-// (not FirstOffset like the sessions reader): occupancy is "current state",
-// so replaying old detection backlog on every restart would only show stale
-// counts, never anything worth keeping.
-//
-// OCCUPANCY_CAMERA_ID scopes this to a single camera (default cam/cam4):
-// occupancy is a per-camera opt-in feature here, not a blanket "every camera
-// gets a live count" one -- other cameras still get session STARTED/ENDED
-// notifications as before via the separate sessions-topic reader, just no
-// live occupancy number.
+
 func consumeOccupancy(ctx context.Context, occHub *occupancyHub, log *slog.Logger) {
 	topic := env("HUMAN_DETECTIONS_TOPIC", "human-detections")
 	cameraID := env("OCCUPANCY_CAMERA_ID", "cam/cam4")
 	r := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     strings.Split(env("KAFKA_BROKERS", "kafka:9092"), ","),
 		Topic:       topic,
-		Partition:   0, // detector topics are created with a single partition (see risingwave/docker-compose.yaml kafka-init)
+		Partition:   0, 
 		MinBytes:    1,
 		MaxBytes:    10e6,
 		StartOffset: kafka.LastOffset,

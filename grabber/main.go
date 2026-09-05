@@ -46,9 +46,6 @@ func main() {
 	log.Println("all camera workers stopped, exiting")
 }
 
-// ensureTopicWithRetry retries topic creation until it succeeds or ctx is
-// cancelled — infra and grabber are separate compose stacks with no startup
-// ordering guarantee, so Kafka may not be reachable yet on first attempt.
 func ensureTopicWithRetry(ctx context.Context, cfg Config) error {
 	for {
 		err := EnsureTopic(ctx, cfg.KafkaBrokers, cfg.KafkaTopic, cfg.KafkaPartitions)

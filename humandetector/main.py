@@ -15,6 +15,7 @@ CONFIDENCE_FLOOR = float(os.getenv("CONFIDENCE_FLOOR", "0.4"))
 DEVICE = os.getenv("DEVICE") or None
 SAMPLE_EVERY_N_FRAMES = int(os.getenv("SAMPLE_EVERY_N_FRAMES", "1"))
 KAFKA_GROUP_ID = os.getenv("KAFKA_GROUP_ID", "human-detector")
+CAMERAS = {c.strip() for c in os.getenv("CAMERAS", "").split(",") if c.strip()}
 
 # COCO class 0 = person
 PERSON_CLASS_ID = 0
@@ -33,6 +34,9 @@ def main() -> None:
 
     try:
         for frame in consumer.frames():
+            if CAMERAS and frame.cam_id not in CAMERAS:
+                continue
+
             results = model(
                 frame.image,
                 classes=[PERSON_CLASS_ID],
@@ -46,9 +50,6 @@ def main() -> None:
                 for box in result.boxes:
                     x1, y1, x2, y2 = box.xyxy[0].tolist()
                     detections.append(bbox(x1, y1, x2, y2, box.conf[0]))
-            # ts=frame.captured_at (grabber's capture time), not "now" — keeps
-            # RisingWave's event-time sessionization accurate regardless of
-            # how long YOLO inference itself takes.
             producer.send(cam_id=frame.cam_id, detections=detections, ts=frame.captured_at)
     finally:
         consumer.close()

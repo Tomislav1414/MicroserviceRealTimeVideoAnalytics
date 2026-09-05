@@ -1,10 +1,6 @@
 services:
 
   # ─── sessionapi ─────────────────────────────────────────────────────────────
-  # Thin REST API over Postgres for session history — the frontend can't
-  # query Postgres directly, and "live" state is already covered by
-  # session-sse, so this only ever serves the *_detection_sessions_log
-  # tables (ended sessions), never live/in-progress ones.
   sessionapi:
     build: .
     container_name: sessionapi

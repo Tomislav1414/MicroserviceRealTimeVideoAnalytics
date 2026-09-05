@@ -42,9 +42,6 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      # Off: the grabber creates its topic explicitly with partitions >=
-      # camera count. Auto-create would race it and default to 1 partition,
-      # silently breaking per-camera partition affinity.
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     volumes:
       - kafka_data:/var/lib/kafka/data
@@ -56,12 +53,10 @@ services:
     restart: unless-stopped
 
   # ─── Kafka UI ──────────────────────────────────────────────────────────────
-  # Browser UI for inspecting topics/partitions/consumer lag while running
-  # grabber/decoder/detector experiments. Not required for the pipeline
-  # itself — safe to remove if unwanted.
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
     container_name: kafka-ui
+    profiles: ["tools"]
     ports:
       - "${KAFKA_UI_PORT:-8080}:8080"
     environment:
@@ -75,6 +70,7 @@ services:
   pgadmin:
     image: dpage/pgadmin4:9.8
     container_name: pgadmin
+    profiles: ["tools"]
     ports:
       - "${PGADMIN_PORT:-8082}:80"
     environment:
@@ -89,11 +85,10 @@ services:
     restart: unless-stopped
 
   # ─── cAdvisor ──────────────────────────────────────────────────────────────
-  # Exposes per-container CPU/memory/network/IO metrics — the raw signal for
-  # the resource-usage-vs-resolution/framerate experiments.
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     container_name: cadvisor
+    profiles: ["tools"]
     ports:
       - "${CADVISOR_PORT:-8081}:8080"
     volumes:
@@ -108,11 +103,10 @@ services:
     restart: unless-stopped
 
   # ─── Prometheus ────────────────────────────────────────────────────────────
-  # Scrapes/stores cAdvisor's time series; query via its HTTP API to pull
-  # data into pandas/matplotlib for thesis figures.
   prometheus:
     image: prom/prometheus:v2.55.1
     container_name: prometheus
+    profiles: ["tools"]
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:

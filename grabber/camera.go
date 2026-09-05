@@ -17,9 +17,6 @@ import (
 
 const reconnectDelay = 3 * time.Second
 
-// RunCamera connects to camID's RTSP stream and forwards every H264 access
-// unit to Kafka until ctx is cancelled. Reconnects on any stream error,
-// mirroring the retry loop mock-cam itself uses on the publish side.
 func RunCamera(ctx context.Context, camID, rtspURL string, producer *Producer) {
 	var frameID uint64
 
@@ -46,8 +43,6 @@ func streamOnce(ctx context.Context, camID, rtspURL string, producer *Producer, 
 	c := gortsplib.Client{
 		Scheme: u.Scheme,
 		Host:   u.Host,
-		// Force TCP: the mock cameras publish over TCP already, and it avoids
-		// UDP port/NAT considerations entirely inside the docker network.
 		Protocol: &tcp,
 	}
 
@@ -81,7 +76,7 @@ func streamOnce(ctx context.Context, camID, rtspURL string, producer *Producer, 
 
 	c.OnPacketRTP(medi, forma, func(pkt *rtp.Packet) {
 		if sendErr != nil {
-			return // already failed this session; drop remaining packets until reconnect
+			return
 		}
 
 		pts, ok := c.PacketPTS(medi, pkt)
@@ -99,8 +94,6 @@ func streamOnce(ctx context.Context, camID, rtspURL string, producer *Producer, 
 
 		isKeyframe := h264.IsRandomAccess(au)
 
-		// Never start mid-GOP: wait for the first keyframe so every camera's
-		// very first published frame is a valid decoder entry point.
 		if !firstRandomAccess {
 			if !isKeyframe {
 				return
@@ -139,8 +132,6 @@ func streamOnce(ctx context.Context, camID, rtspURL string, producer *Producer, 
 	}
 }
 
-// annexBEncode concatenates H264 NAL units with Annex-B start codes, the
-// standard elementary-stream framing any H264 decoder expects as input.
 func annexBEncode(au [][]byte) []byte {
 	size := 0
 	for _, nalu := range au {

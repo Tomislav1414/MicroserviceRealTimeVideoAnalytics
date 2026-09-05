@@ -1,13 +1,6 @@
 services:
 
   # ─── Kafka topic init ───────────────────────────────────────────────────────
-  # One-shot: creates `<type>-detections` per DETECTOR_TYPES, plus the shared
-  # `sessions` topic, before any detector/RisingWave consumer or producer
-  # touches them. Required because infra's KAFKA_AUTO_CREATE_TOPICS_ENABLE is
-  # off (see infra/docker-compose.yaml) — without this, a consumer joining
-  # its group before the topic exists can be assigned zero partitions
-  # permanently, and RisingWave's Kafka sinks fail outright on a missing
-  # topic instead of creating it.
   kafka-init:
     image: apache/kafka:3.9.0
     environment:
@@ -23,14 +16,8 @@ services:
     restart: on-failure
 
   # ─── RisingWave ─────────────────────────────────────────────────────────────
-  # Streaming SQL sessionizer (see ARCHITECTURE.md). Single-node in-memory
-  # (`playground`, the default command) — state resets on restart, fine since
-  # every source uses scan.startup.mode='latest'.
-  #   4566: Postgres wire protocol (psql / sinks)   5691: dashboard UI
   risingwave:
     image: risingwavelabs/risingwave:latest
-    # Embedded Python UDFs (bbox_overlaps_zone in shared.sql) are disabled by
-    # default since RisingWave v2.1.5/2.2.4/2.3.0 — enable via risingwave.toml.
     command: ["single_node", "--in-memory", "--config-path", "/risingwave.toml"]
     volumes:
       - ./risingwave.toml:/risingwave.toml:ro
@@ -40,10 +27,6 @@ services:
     restart: unless-stopped
 
   # ─── RisingWave pipeline registration ───────────────────────────────────────
-  # One-shot: applies shared.sql, then templates+applies schema.sql/pipeline.sql
-  # per DETECTOR_TYPES entry against infra's actual Postgres (vms/vms/vms —
-  # not a separate "detections" db/user) and Kafka. Idempotent; re-run with
-  # `docker compose up -d --build risingwave-init` after editing any .sql file.
   risingwave-init:
     build: .
     environment:
@@ -64,6 +47,20 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: on-failure
+
+  # ─── Retention cleanup ──────────────────────────────────────────────────────
+  retention:
+    build: .
+    entrypoint: ["/retention.sh"]
+    environment:
+      POSTGRES_DSN: "postgresql://${POSTGRES_USER:-vms}:${POSTGRES_PASSWORD:-vms}@postgres:5432/${POSTGRES_DB:-vms}"
+      DETECTOR_TYPES: ${DETECTOR_TYPES:-human,car}
+      RETENTION_MINUTES: ${RETENTION_MINUTES:-15}
+      INTERVAL_SECONDS: ${INTERVAL_SECONDS:-60}
+    depends_on:
+      risingwave-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
 networks:
   default:

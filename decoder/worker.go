@@ -12,10 +12,7 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// runPartitionWorker owns exactly one Kafka partition (= one camera) for the
-// lifetime of a single consumer group generation. It gets a brand new
-// h264Decoder every time — on first assignment, on rebalance, and on
-// restart — so decode state never survives a partition handoff.
+
 func runPartitionWorker(ctx context.Context, gen *kafka.Generation, cfg Config, partition int, startOffset int64, producer *Producer) {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:   cfg.KafkaBrokers,
@@ -34,10 +31,6 @@ func runPartitionWorker(ctx context.Context, gen *kafka.Generation, cfg Config, 
 
 	offset := startOffset
 	processed := 0
-	// A partition assignment may resume from an arbitrary offset (last
-	// committed, not necessarily a keyframe boundary), and the fresh decoder
-	// above has no reference frames yet — so always discard until the next
-	// keyframe before decoding anything.
 	waitingForKeyframe := true
 
 	for {

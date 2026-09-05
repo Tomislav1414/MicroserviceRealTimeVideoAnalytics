@@ -1,7 +1,4 @@
--- RisingWave sessionizer pipeline. Templated per detector type: __DETECTOR__
--- is substituted (by init.sh) with a detector name (e.g. "human", "vehicle"),
--- giving each detector type its own topic, view/MV chain, and Postgres tables.
--- Instantiate once per entry in DETECTOR_TYPES.
+
 
 DROP SINK IF EXISTS __DETECTOR___zone_exit_sink;
 DROP SINK IF EXISTS __DETECTOR___zone_entry_sink;
@@ -86,20 +83,6 @@ FROM __DETECTOR___islanded;
 
 -- ---------------------------------------------------------------------------
 -- MV #1 — session_live: "when did it start", updated live
---
--- confirmed_at is set (and frozen forever after, since MAX() of a single
--- non-null value never changes once other rows in the group keep matching
--- CASE -> NULL) the moment the __MIN_INCIDENT_DETECTIONS__-th detection
--- lands. It's computed here, inside the GROUP BY, rather than as a filter
--- over the raw per-row `islanded` stream: a plain (non-aggregated) view
--- combined with a dynamic filter against `clock` was observed to re-emit
--- the same row on every clock update instead of once (no stable keyed state
--- for RisingWave to dedupe against). Aggregating first gives the STARTED
--- sink query below the same well-behaved, single-emission shape as session_ended.
---
--- session_id is prefixed with the detector name so it stays globally unique
--- across detector types once sessions from every type are re-published onto
--- the single shared `sessions` Kafka topic (see sink #4/#5 below).
 -- ---------------------------------------------------------------------------
 CREATE MATERIALIZED VIEW __DETECTOR___session_live AS
 SELECT
@@ -114,29 +97,12 @@ GROUP BY cam_id, session_seq;
 
 -- ---------------------------------------------------------------------------
 -- Event-time clock.
---
--- A single global MAX(ts) across every camera of this detector type means
--- one camera's confirmation/ended gate can occasionally be held up by a
--- completely unrelated camera's stream stalling (observed in practice as
--- multi-second STARTED delivery outliers). A per-camera clock (GROUP BY
--- cam_id) joined against session_live would fix that coupling, but a plain
--- JOIN between two streaming views loses RisingWave's dynamic-filter
--- once-only emission optimization entirely -- confirmed empirically:
--- switching to a per-camera JOIN made sessions resend STARTED dozens of
--- times, once per incoming detection, instead of exactly once. Kept as a
--- single global scalar deliberately; the occasional cross-camera stall is
--- the accepted tradeoff for correct once-only emission.
 -- ---------------------------------------------------------------------------
 CREATE MATERIALIZED VIEW __DETECTOR___clock AS
 SELECT MAX(ts) AS max_ts FROM __DETECTOR___detections;
 
 -- ---------------------------------------------------------------------------
 -- MV #2 — session_ended: "when did it end", in EVENT TIME
---
--- running_count >= __MIN_INCIDENT_DETECTIONS__ filters out sessions that never
--- accumulated enough detections to count as a real incident (noise / false
--- positives). Safe to add here: by the time last_seen has settled quiet,
--- running_count is frozen too, so this still fires at most once per session.
 -- ---------------------------------------------------------------------------
 CREATE MATERIALIZED VIEW __DETECTOR___session_ended AS
 SELECT
@@ -401,11 +367,6 @@ WITH (
 ----------------------------------------------------------------------------
 -- Sink #6: zone_entry_sink -> Kafka topic `sessions`
 -- Sink #7: zone_exit_sink -> Kafka topic `sessions`
---
--- Danger zone breaches, same shared `sessions` topic as STARTED/ENDED above,
--- distinguished by kind=DANGER_ZONE_ENTRY/DANGER_ZONE_EXIT plus zone_id/
--- zone_name. No confirmation gate (see zone_hits comment) — fires on the
--- session's first/last raw detection.
 -- ---------------------------------------------------------------------------
 
 CREATE SINK __DETECTOR___zone_entry_sink AS

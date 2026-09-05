@@ -56,9 +56,6 @@ services:
     environment:
       CAM_ID: cam/cam3
       VIDEO_PATH: /videos/worker_zone.mp4
-      # Source clip is native 1920x1080 @ ~60fps, well above the pipeline's
-      # 12fps design — capped to match cam1/cam2 and keep decode/detection
-      # real-time (see entrypoint.sh).
       OUTPUT_FPS: "12"
       RTSP_HOST: mediamtx
       RTSP_PORT: 8554
@@ -79,6 +76,74 @@ services:
       # Source clip is native ~60fps, well above the pipeline's 12fps design
       # — capped to match cam1/cam2 and keep decode/detection real-time
       # (see entrypoint.sh).
+      OUTPUT_FPS: "12"
+      RTSP_HOST: mediamtx
+      RTSP_PORT: 8554
+    volumes:
+      - ./videos:/videos
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+
+  # ─── Mock Camera cam5 (FP30, stream-only) ───────────────────────────────────────
+  mock-cam-cam5:
+    build: ./mock-cam
+    image: mock-cam:latest
+    container_name: mock-cam-cam5
+    environment:
+      CAM_ID: cam/cam5
+      VIDEO_PATH: /videos/fp30.mp4
+      OUTPUT_FPS: "12"
+      RTSP_HOST: mediamtx
+      RTSP_PORT: 8554
+    volumes:
+      - ./videos:/videos
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+
+  # ─── Mock Camera cam6 (FP15, stream-only) ───────────────────────────────────────
+  mock-cam-cam6:
+    build: ./mock-cam
+    image: mock-cam:latest
+    container_name: mock-cam-cam6
+    environment:
+      CAM_ID: cam/cam6
+      VIDEO_PATH: /videos/fp15.mp4
+      OUTPUT_FPS: "12"
+      RTSP_HOST: mediamtx
+      RTSP_PORT: 8554
+    volumes:
+      - ./videos:/videos
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+
+  # ─── Mock Camera cam7 (living room fire, fire/smoke detection) ──────────────────
+  mock-cam-cam7:
+    build: ./mock-cam
+    image: mock-cam:latest
+    container_name: mock-cam-cam7
+    environment:
+      CAM_ID: cam/cam7
+      VIDEO_PATH: /videos/hfsc_livingroom_fire.mp4
+      OUTPUT_FPS: "12"
+      RTSP_HOST: mediamtx
+      RTSP_PORT: 8554
+    volumes:
+      - ./videos:/videos
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+
+  # ─── Mock Camera cam8 (room fire, fire/smoke detection) ─────────────────────────
+  mock-cam-cam8:
+    build: ./mock-cam
+    image: mock-cam:latest
+    container_name: mock-cam-cam8
+    environment:
+      CAM_ID: cam/cam8
+      VIDEO_PATH: /videos/roomfire41.mp4
       OUTPUT_FPS: "12"
       RTSP_HOST: mediamtx
       RTSP_PORT: 8554

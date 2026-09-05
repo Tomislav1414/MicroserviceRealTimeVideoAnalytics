@@ -1,14 +1,11 @@
 services:
 
   # ─── Frame grabber ─────────────────────────────────────────────────────────
-  # Connects to each configured camera's RTSP stream, extracts H264 access
-  # units without decoding, and publishes them to Kafka partitioned by
-  # camera ID.
   grabber:
     build: .
     container_name: grabber
     environment:
-      CAMERAS: ${CAMERAS:-cam/cam1,cam/cam2,cam/cam3,cam/cam4}
+      CAMERAS: ${CAMERAS:-cam/cam1,cam/cam2,cam/cam3,cam/cam4,cam/cam7,cam/cam8}
       MEDIAMTX_HOST: ${MEDIAMTX_HOST:-mediamtx}
       MEDIAMTX_PORT: ${MEDIAMTX_PORT:-8554}
       KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}

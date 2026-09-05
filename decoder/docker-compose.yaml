@@ -2,8 +2,6 @@ services:
 
   # ─── Decoder ────────────────────────────────────────────────────────────────
   # Stateful H264 decoder: one consumer-group member, scaled via replicas.
-  # Kafka assigns each replica a disjoint set of raw-frames partitions
-  # (= cameras), so `--scale decoder=N` is how this stage scales.
   decoder:
     build: .
     environment:

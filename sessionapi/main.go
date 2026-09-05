@@ -28,7 +28,7 @@ type api struct {
 	db        *sql.DB
 	log       *slog.Logger
 	cfg       Config
-	detectors map[string]struct{} // allowlist: detector table names are interpolated into SQL, so only a value from this set may reach a query
+	detectors map[string]struct{} 
 }
 
 func main() {
@@ -84,9 +84,6 @@ func withCORS(next http.Handler) http.Handler {
 	})
 }
 
-// handleHealthz pings Postgres rather than just returning 200 unconditionally
-// (unlike this repo's other services' /healthz) because this service does
-// nothing but serve Postgres data — a DB outage should show up as unhealthy.
 func (a *api) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
@@ -133,8 +130,6 @@ func (a *api) handleSessions(w http.ResponseWriter, r *http.Request) {
 
 	cameraID := q.Get("camera_id")
 
-	// detector is checked against the allowlist above before being
-	// interpolated here — table names can't be bind parameters in SQL.
 	query := fmt.Sprintf(`
 		SELECT session_id, camera_id, start_time, end_time, count
 		FROM %s_detection_sessions_log
